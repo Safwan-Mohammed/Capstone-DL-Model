@@ -1,0 +1,6 @@
+scikit-learn
+numpy
+pandas
+matplotlib
+torch
+tensorflow[and-cuda]==2.15.0

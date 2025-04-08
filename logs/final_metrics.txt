@@ -1,0 +1,3 @@
+test_loss: 0.6705564260482788
+test_accuracy: 0.5841270089149475
+epochs_trained: 20
