@@ -2,7 +2,7 @@ import torch
 import torch.utils.data as data
 import numpy as np
 import os
-import pickle as pkl
+from typing import List, Dict
 
 from app.psetae_model.stclassifier import PseTae
 from app.psetae_model.dataset import PixelSetData
@@ -13,14 +13,14 @@ def recursive_todevice(x, device):
     else:
         return [recursive_todevice(c, device) for c in x]
 
-def prepare_model_and_loader(config):
+def prepare_model_and_loader(config, dataset_folder: str):
     mean = np.array([-9.495785, -16.39869, 1.788546, 0.51690346, 1.705192,
                      0.5024654, 0.76597273, -0.5024654, 0.10062386, 0.23882234], dtype=np.float32)
     std = np.array([1.9506195, 2.1658468, 8.339499, 0.14740352, 37.201633,
                     0.09887332, 0.22141898, 0.09887332, 0.12670133, 0.09622738], dtype=np.float32)
     norm = (mean, std)
 
-    dt = PixelSetData(config['dataset_folder'], labels='labels', npixel=config['npixel'],
+    dt = PixelSetData(dataset_folder, labels=None, npixel=config['npixel'],
                       norm=norm, extra_feature=None)
     dl = data.DataLoader(dt, batch_size=config['batch_size'], num_workers=config['num_workers'])
 
@@ -44,7 +44,7 @@ def prepare_model_and_loader(config):
     model = PseTae(**model_config)
     model = model.to(config['device'])
 
-    weight_path = os.path.join(os.path.dirname(__file__), f'Fold_1', 'model.pth.tar')
+    weight_path = os.path.join(os.path.dirname(__file__), 'model.pth.tar')
     if not os.path.exists(weight_path):
         raise FileNotFoundError(f"Weight file not found: {weight_path}")
     checkpoint = torch.load(weight_path, map_location=config['device'])
@@ -54,32 +54,21 @@ def prepare_model_and_loader(config):
     return model, dl
 
 def predict(model, loader, config):
-    record = []
+    predictions = []
     device = torch.device(config['device'])
 
-    for x, y in loader:
-        y_true = list(map(int, y))
+    for x, _ in loader:
         x = recursive_todevice(x, device)
         with torch.no_grad():
             prediction = model(x)
         y_p = list(prediction.argmax(dim=1).cpu().numpy())
-        record.append(np.stack([y_true, y_p], axis=1))
+        predictions.extend(y_p)
 
-    record = np.concatenate(record, axis=0)
-    os.makedirs(config['res_dir'], exist_ok=True)
-    output_path = os.path.join(config['res_dir'], 'predictions_ytrue_ypred.npy')
-    np.save(output_path, record)
-    return record
+    return predictions
 
-def main(config):
-    model, loader = prepare_model_and_loader(config)
-    record = predict(model, loader, config)
-    return record
-
-if __name__ == '__main__':
+def get_model_prediction(data: List[Dict]) -> List[Dict]:
     config = {
-        'dataset_folder': os.path.join(os.path.dirname(__file__), 'PRED_DATA'),
-        'res_dir': os.path.join(os.path.dirname(__file__), 'PRED_DATA'),
+        'dataset_folder': os.path.join(os.path.dirname(__file__), '..', 'PRED_DATA', "DATA"),
         'num_workers': 0,
         'device': 'cuda' if torch.cuda.is_available() else 'cpu',
         'batch_size': 512,
@@ -96,4 +85,35 @@ if __name__ == '__main__':
         'dropout': 0.2,
         'mlp4': [128, 64, 32, 2]
     }
-    main(config)
+
+    npy_files = []
+    results = []
+    for row in data:
+        all_keys = list(row.keys())
+        if len(all_keys) < 62:  # 60 features + 2 non-feature keys
+            raise ValueError(f"Expected at least 62 keys (2 non-features + 60 features), got {len(all_keys)}")
+        
+        col1_key, col2_key = all_keys[0], all_keys[1]
+        col1_value, col2_value = str(row[col1_key]), str(row[col2_key])
+        col1_value = col1_value.replace(",", "_").replace("/", "_").replace("\\", "_")
+        col2_value = col2_value.replace(",", "_").replace("/", "_").replace("\\", "_")
+        file_name = f"{col1_value}_{col2_value}.npy"
+        file_path = os.path.join(config['dataset_folder'], 'DATA', file_name)
+        npy_files.append(file_path)
+        
+        # Store column keys and values for result
+        results.append({
+            col1_key: col1_value,
+            col2_key: col2_value,
+            "prediction": None
+        })
+
+    # Run prediction
+    model, loader = prepare_model_and_loader(config, config['dataset_folder'])
+    predictions = predict(model, loader, config)
+
+    # Assign predictions to results
+    for idx, prediction in enumerate(predictions):
+        results[idx]["prediction"] = int(prediction)
+
+    return results
