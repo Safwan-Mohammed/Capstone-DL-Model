@@ -1,7 +1,7 @@
 import torch
 import torch.utils.data as data
 import numpy as np
-import os
+import os, json
 from typing import List, Dict
 
 from app.psetae_model.stclassifier import PseTae
@@ -14,16 +14,17 @@ def recursive_todevice(x, device):
         return [recursive_todevice(c, device) for c in x]
 
 def prepare_model_and_loader(config, dataset_folder: str):
+    print("Preparing model and data loader...")
     mean = np.array([-9.495785, -16.39869, 1.788546, 0.51690346, 1.705192,
                      0.5024654, 0.76597273, -0.5024654, 0.10062386, 0.23882234], dtype=np.float32)
     std = np.array([1.9506195, 2.1658468, 8.339499, 0.14740352, 37.201633,
                     0.09887332, 0.22141898, 0.09887332, 0.12670133, 0.09622738], dtype=np.float32)
     norm = (mean, std)
-
-    dt = PixelSetData(dataset_folder, labels=None, npixel=config['npixel'],
-                      norm=norm, extra_feature=None)
+    print("Normalization parameters set.")
+    dt = PixelSetData(dataset_folder, npixel=config['npixel'], norm=norm, extra_feature=None)
+    print("Dataset loaded successfully.")
     dl = data.DataLoader(dt, batch_size=config['batch_size'], num_workers=config['num_workers'])
-
+    print("DataLoader created successfully.")
     model_config = dict(
         input_dim=config['input_dim'],
         mlp1=config['mlp1'],
@@ -44,31 +45,38 @@ def prepare_model_and_loader(config, dataset_folder: str):
     model = PseTae(**model_config)
     model = model.to(config['device'])
 
+    print("Loading model weights...")
     weight_path = os.path.join(os.path.dirname(__file__), 'model.pth.tar')
     if not os.path.exists(weight_path):
         raise FileNotFoundError(f"Weight file not found: {weight_path}")
+    print("Model weights loaded successfully.")
     checkpoint = torch.load(weight_path, map_location=config['device'])
+    print("Checkpoint loaded successfully.")
     model.load_state_dict(checkpoint['state_dict'])
+    print("Model state dict loaded successfully.")
     model.eval()
-
+    print("Model set to evaluation mode.")
     return model, dl
 
 def predict(model, loader, config):
     predictions = []
     device = torch.device(config['device'])
+    print(f"Starting prediction on device: {device}")
 
-    for x, _ in loader:
+    for x in loader:
         x = recursive_todevice(x, device)
         with torch.no_grad():
             prediction = model(x)
-        y_p = list(prediction.argmax(dim=1).cpu().numpy())
+        # Convert int64 to Python int
+        y_p = [int(y) for y in prediction.argmax(dim=1).cpu().numpy()]
         predictions.extend(y_p)
 
+    print(f"Total predictions: {len(predictions)}")
     return predictions
 
 def get_model_prediction(data: List[Dict]) -> List[Dict]:
     config = {
-        'dataset_folder': os.path.join(os.path.dirname(__file__), '..', 'PRED_DATA', "DATA"),
+        'dataset_folder': os.path.join(os.path.dirname(__file__), '..', 'PRED_DATA'),
         'num_workers': 0,
         'device': 'cuda' if torch.cuda.is_available() else 'cpu',
         'batch_size': 512,
@@ -101,19 +109,22 @@ def get_model_prediction(data: List[Dict]) -> List[Dict]:
         file_path = os.path.join(config['dataset_folder'], 'DATA', file_name)
         npy_files.append(file_path)
         
-        # Store column keys and values for result
         results.append({
             col1_key: col1_value,
             col2_key: col2_value,
             "prediction": None
         })
-
-    # Run prediction
     model, loader = prepare_model_and_loader(config, config['dataset_folder'])
     predictions = predict(model, loader, config)
 
     # Assign predictions to results
     for idx, prediction in enumerate(predictions):
-        results[idx]["prediction"] = int(prediction)
+        results[idx]["prediction"] = int(prediction)  # Already int from predict
 
+    # Write results to results.json
+    print("Writing results to results.json")
+    with open('results.json', 'w') as f:
+        json.dump(results, f, indent=4)
+
+    print(f"Returning {len(results)} prediction results")
     return results

@@ -3,10 +3,11 @@ import os
 import json
 from typing import List, Dict
 
-def convert_to_npy(data: List[Dict], output_dir: str = "../PRED_DATA") -> str:
+def convert_to_npy(data: List[Dict]) -> str:
 
-    data_dir = os.path.join(output_dir, "DATA")
-    meta_dir = os.path.join(output_dir, "META")
+    data_dir = os.path.join(os.path.dirname(__file__), '..', 'PRED_DATA', 'DATA')
+    meta_dir = os.path.join(os.path.dirname(__file__), '..', 'PRED_DATA', "META")
+
     os.makedirs(data_dir, exist_ok=True)
     os.makedirs(meta_dir, exist_ok=True)
 
