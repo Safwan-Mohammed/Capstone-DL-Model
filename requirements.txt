@@ -1,6 +1,8 @@
-scikit-learn
+fastapi
+uvicorn
 numpy
+joblib
+scikit-learn
 pandas
-matplotlib
 torch
-tensorflow[and-cuda]==2.15.0
+tqdm
