@@ -73,7 +73,6 @@ class PseTae_pretrained(nn.Module):
             self.fold_folders = [self.fold_folders[int(fold) - 1]]
         self.model_instances = []
 
-        print('Loading pre-trained models . . .')
         for f in self.fold_folders:
             m = PseTae(**hyperparameters)
 
@@ -85,7 +84,6 @@ class PseTae_pretrained(nn.Module):
             d = torch.load(os.path.join(f, 'model.pth.tar'), map_location=map_loc)
             m.load_state_dict(d['state_dict'])
             self.model_instances.append(m)
-        print('Successfully loaded {} model instances'.format(self.n_folds))
 
     def forward(self, input):
         """ Returns class logits
